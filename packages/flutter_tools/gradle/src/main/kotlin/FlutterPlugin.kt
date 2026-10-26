@@ -99,6 +99,15 @@ class FlutterPlugin : Plugin<Project> {
         rootProject.allprojects {
             repositories.maven {
                 url = uri(repository!!)
+                // The self-hosted OTA kit serves the engine artifacts from a
+                // loopback HTTP server (FLUTTER_STORAGE_BASE_URL points at
+                // 127.0.0.1). Gradle rejects plain HTTP repositories unless
+                // they opt in. Only widen this for loopback addresses; remote
+                // mirrors must use HTTPS.
+                isAllowInsecureProtocol =
+                    repository!!.startsWith("http://127.0.0.1") ||
+                        repository!!.startsWith("http://localhost") ||
+                        repository!!.startsWith("http://[::1]")
             }
         }
 
