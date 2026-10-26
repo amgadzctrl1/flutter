@@ -77,6 +77,11 @@ jobs:
             echo "the artifact list is empty" >&2
             exit 1
           fi
+          if [[ -n "$(sort mirror/paths.txt | uniq -d)" ]]; then
+            echo "the artifact list has duplicate paths:" >&2
+            sort mirror/paths.txt | uniq -d >&2
+            exit 1
+          fi
           echo "artifact paths: $count"
 
       - name: Download artifacts
