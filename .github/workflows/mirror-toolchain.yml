@@ -26,7 +26,7 @@ env:
   UPSTREAM: https://download.shorebird.dev
   REPOSITORY: amgadzctrl1/flutter
   TAG: ota-toolchain-4b936a0
-  FLUTTER_COMMIT: 5bef02a16146a0effc07da4acccaafe90a2739ce
+  FLUTTER_COMMIT: 4bd826e910a6e5d6e9ca73172ae8c4843b904267
 
 jobs:
   mirror:
