@@ -1,0 +1,269 @@
+name: Mirror OTA toolchain
+
+# Downloads the pinned engine/Dart/Flutter artifacts from download.shorebird.dev,
+# verifies every byte, and publishes them as flat GitHub release assets plus a
+# mirror.json manifest. The `ota` CLI serves those assets from a localhost
+# path-preserving mirror, so builds never contact download.shorebird.dev.
+#
+# Triggered by pushing tools/toolchain-mirror/dispatch.json to this branch.
+# Use tools/toolchain-mirror/publish-to-fork.sh instead of pushing by hand.
+
+on:
+  push:
+    branches: [ota-toolchain]
+    paths:
+      - tools/toolchain-mirror/dispatch.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-toolchain
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://download.shorebird.dev
+  REPOSITORY: amgadzctrl1/flutter
+  TAG: ota-toolchain-4b936a0
+  FLUTTER_COMMIT: 5bef02a16146a0effc07da4acccaafe90a2739ce
+
+jobs:
+  mirror:
+    name: Download, verify and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read the pin and dispatch options
+        id: config
+        run: |
+          set -euo pipefail
+          revision=$(tr -d '[:space:]' < tools/toolchain-mirror/revision.txt)
+          if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid engine revision: $revision" >&2
+            exit 1
+          fi
+          dry_run=false
+          if [[ -f tools/toolchain-mirror/dispatch.json ]]; then
+            dry_run=$(python3 -c 'import json; print("true" if json.load(open("tools/toolchain-mirror/dispatch.json")).get("dry_run") else "false")')
+          fi
+          {
+            echo "revision=$revision"
+            echo "dry_run=$dry_run"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### OTA toolchain mirror"
+            echo ""
+            echo "- engine revision: \`$revision\`"
+            echo "- flutter commit: \`$FLUTTER_COMMIT\`"
+            echo "- dry run: \`$dry_run\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Expand the artifact list
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          mkdir -p mirror
+          sed -e "s/@REV@/${{ steps.config.outputs.revision }}/g" \
+              -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' \
+              "$GITHUB_WORKSPACE/tools/toolchain-mirror/artifacts.txt" \
+            > mirror/paths.txt
+          count=$(wc -l < mirror/paths.txt | tr -d ' ')
+          if [[ "$count" -eq 0 ]]; then
+            echo "the artifact list is empty" >&2
+            exit 1
+          fi
+          echo "artifact paths: $count"
+
+      - name: Download artifacts
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          export UPSTREAM
+          mkdir -p mirror/download
+          download_one() {
+            local path="$1"
+            local target="mirror/download/$path"
+            mkdir -p "$(dirname "$target")"
+            if ! curl --fail --silent --show-error --location \
+                --retry 5 --retry-delay 5 --retry-all-errors \
+                --connect-timeout 30 --max-time 900 \
+                --output "$target" "$UPSTREAM/$path"; then
+              echo "download failed: $path" >&2
+              return 1
+            fi
+            local size
+            size=$(stat -c %s "$target")
+            if [[ "$size" -le 0 ]]; then
+              echo "empty download: $path" >&2
+              return 1
+            fi
+            echo "ok $size $path"
+          }
+          export -f download_one
+          xargs -a mirror/paths.txt -d '\n' -P 4 -I {} \
+            bash -c 'download_one "$@"' _ {}
+          find mirror/download -type f | wc -l
+
+      - name: Build the manifest and flat assets
+        working-directory: ${{ runner.temp }}
+        env:
+          MANIFEST: ${{ github.workspace }}/mirror.json
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/tools/toolchain-mirror/build_manifest.py" \
+            mirror/download mirror/assets \
+            --output "$MANIFEST" \
+            --revision "${{ steps.config.outputs.revision }}" \
+            --flutter-commit "$FLUTTER_COMMIT" \
+            --repository "$REPOSITORY" \
+            --tag "$TAG"
+
+      - name: Validate the manifest against the artifact list
+        working-directory: ${{ runner.temp }}
+        env:
+          MANIFEST: ${{ github.workspace }}/mirror.json
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          work = pathlib.Path.cwd()
+          manifest = json.loads(pathlib.Path(os.environ["MANIFEST"]).read_text())
+          expected = [line for line in (work / "mirror" / "paths.txt").read_text().splitlines() if line]
+          entries = manifest["entries"]
+
+          problems = []
+          if len(entries) != len(expected):
+              problems.append(f"manifest has {len(entries)} entries, expected {len(expected)}")
+          seen = {entry["path"] for entry in entries}
+          for path in expected:
+              if path not in seen:
+                  problems.append(f"missing from manifest: {path}")
+          for entry in entries:
+              asset = work / "mirror" / "assets" / entry["asset"]
+              if not asset.is_file():
+                  problems.append(f"missing asset file: {entry['asset']}")
+              elif asset.stat().st_size != entry["bytes"]:
+                  problems.append(f"size mismatch for {entry['path']}")
+
+          total = sum(entry["bytes"] for entry in entries)
+          print(f"entries={len(entries)} total_bytes={total}")
+          if problems:
+              print("\n".join(problems), file=sys.stderr)
+              sys.exit(1)
+          PY
+          {
+            echo "- artifacts: $(python3 -c 'import json,os; print(len(json.load(open(os.environ["MANIFEST"]))["entries"]))')"
+            echo "- total size: $(python3 -c 'import json,os; print(sum(e["bytes"] for e in json.load(open(os.environ["MANIFEST"]))["entries"]))') bytes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the release
+        if: steps.config.outputs.dry_run != 'true'
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST: ${{ github.workspace }}/mirror.json
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists; replacing its assets"
+          else
+            gh release create "$TAG" \
+              --repo "$REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "OTA toolchain mirror (engine ${{ steps.config.outputs.revision }})" \
+              --notes "Pinned Flutter/Shorebird artifacts for the self-hosted OTA kit. Flat asset names encode the storage path; mirror.json lists paths, sizes and SHA-256 digests. The ota CLI verifies every download." \
+              --latest=false
+          fi
+          gh release upload "$TAG" mirror/assets/* "$MANIFEST" \
+            --repo "$REPOSITORY" --clobber
+
+      - name: Verify the published release
+        if: steps.config.outputs.dry_run != 'true'
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST: ${{ github.workspace }}/mirror.json
+        run: |
+          set -euo pipefail
+          expected_count=$(python3 -c 'import json,os; print(len(json.load(open(os.environ["MANIFEST"]))["entries"]))')
+          published_count=$(gh release view "$TAG" --repo "$REPOSITORY" --json assets --jq '.assets | length')
+          echo "published assets: $published_count (expected $((expected_count + 1)) including mirror.json)"
+          if [[ "$published_count" -ne $((expected_count + 1)) ]]; then
+            echo "asset count mismatch" >&2
+            exit 1
+          fi
+
+          gh release view "$TAG" --repo "$REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name) \(.size)"' > published.txt
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          manifest = json.loads(open(os.environ["MANIFEST"], encoding="utf-8").read())
+          published = {}
+          for line in open("published.txt", encoding="utf-8"):
+              name, size = line.rsplit(" ", 1)
+              published[name] = int(size)
+
+          problems = []
+          for entry in manifest["entries"]:
+              if published.get(entry["asset"]) != entry["bytes"]:
+                  problems.append(
+                      f"{entry['asset']}: release has {published.get(entry['asset'])}, "
+                      f"manifest says {entry['bytes']}"
+                  )
+          if "mirror.json" not in published:
+              problems.append("mirror.json is missing from the release")
+          if problems:
+              print("\n".join(problems), file=sys.stderr)
+              sys.exit(1)
+          print(f"verified {len(manifest['entries'])} assets against the manifest")
+          PY
+
+      - name: Fetch the manifest and a sample asset as a client would
+        if: steps.config.outputs.dry_run != 'true'
+        working-directory: ${{ runner.temp }}
+        env:
+          BASE: https://github.com/${{ env.REPOSITORY }}/releases/download/${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            --output remote-manifest.json "$BASE/mirror.json"
+          sample=$(python3 -c 'import json; m=json.load(open("remote-manifest.json")); e=min(m["entries"], key=lambda x: x["bytes"]); print(e["asset"], e["sha256"])')
+          asset=${sample% *}
+          digest=${sample#* }
+          curl --fail --silent --show-error --location --retry 3 \
+            --output remote-sample "$BASE/$asset"
+          actual=$(sha256sum remote-sample | cut -d ' ' -f 1)
+          echo "sample: $asset $actual"
+          if [[ "$actual" != "$digest" ]]; then
+            echo "sample digest mismatch: expected $digest, got $actual" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+
+          manifest = json.load(open("remote-manifest.json", encoding="utf-8"))
+          assert manifest["engine_revision"] == "${{ steps.config.outputs.revision }}"
+          print("remote manifest:", len(manifest["entries"]), "entries")
+          PY
+          {
+            echo "- release: https://github.com/${{ env.REPOSITORY }}/releases/tag/${{ env.TAG }}"
+            echo "- remote manifest verified, sample \`$asset\` SHA-256 matches"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dry run summary
+        if: steps.config.outputs.dry_run == 'true'
+        run: |
+          set -euo pipefail
+          echo "Dry run: downloaded and verified every artifact; nothing was published." >> "$GITHUB_STEP_SUMMARY"
