@@ -1,0 +1,62 @@
+name: OTA toolchain mirror
+
+# Builds the self-hosted copy of the pinned Shorebird engine artifacts and
+# publishes it as a release in this repository. The `ota` CLI downloads the
+# bundle for its host, verifies its SHA-256, and serves it from 127.0.0.1, so
+# `ota toolchain install`, `ota base` and `ota update` never contact
+# download.shorebird.dev.
+#
+# Run manually from the Actions tab ("OTA toolchain mirror" -> Run workflow).
+# The release tag is fixed to the engine revision; re-running replaces the two
+# host bundles with --clobber.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ota-toolchain-mirror
+  cancel-in-progress: false
+
+env:
+  FLUTTER_COMMIT: 5bef02a16146a0effc07da4acccaafe90a2739ce
+  ENGINE_REVISION: 4b936a0c03e13389ddfb1ac48823f187964975c2
+  RELEASE_TAG: ota-toolchain-4b936a0c
+
+jobs:
+  mirror:
+    name: Mirror ${{ matrix.host }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - darwin-arm64
+          - linux-x64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            tool
+          sparse-checkout-cone-mode: false
+
+      - name: Verify the pinned engine revision
+        run: |
+          set -euo pipefail
+          actual="$(curl -fsSL \
+            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${FLUTTER_COMMIT}/bin/internal/engine.version")"
+          echo "engine.version: $actual"
+          test "$actual" = "$ENGINE_REVISION"
+
+      - name: Build and publish the ${{ matrix.host }} bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash tool/ota_mirror.sh \
+            "${{ matrix.host }}" \
+            "$RUNNER_TEMP/mirror-${{ matrix.host }}" \
+            --publish
