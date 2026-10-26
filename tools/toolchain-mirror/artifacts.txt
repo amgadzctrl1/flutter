@@ -1,0 +1,63 @@
+# Paths served from the fork's GitHub release, relative to the storage base.
+# @REV@ is replaced with revision.txt by the mirror workflow.
+# One path per line; blank lines and # comments are ignored.
+
+# --- Flutter universal host artifacts (macOS + Linux) ---
+flutter_infra_release/flutter/@REV@/sky_engine.zip
+flutter_infra_release/flutter/@REV@/flutter_gpu.zip
+flutter_infra_release/flutter/@REV@/flutter_patched_sdk.zip
+flutter_infra_release/flutter/@REV@/flutter_patched_sdk_product.zip
+flutter_infra_release/flutter/@REV@/engine_stamp.json
+flutter_infra_release/flutter/@REV@/darwin-arm64/artifacts.zip
+flutter_infra_release/flutter/@REV@/darwin-arm64/font-subset.zip
+flutter_infra_release/flutter/@REV@/darwin-x64/artifacts.zip
+flutter_infra_release/flutter/@REV@/darwin-x64/font-subset.zip
+flutter_infra_release/flutter/@REV@/linux-arm64/artifacts.zip
+flutter_infra_release/flutter/@REV@/linux-arm64/font-subset.zip
+flutter_infra_release/flutter/@REV@/linux-x64/artifacts.zip
+flutter_infra_release/flutter/@REV@/linux-x64/font-subset.zip
+
+# --- Dart SDKs (bootstrap is curl, before the Flutter tool starts) ---
+flutter_infra_release/flutter/@REV@/dart-sdk-darwin-arm64.zip
+flutter_infra_release/flutter/@REV@/dart-sdk-darwin-x64.zip
+flutter_infra_release/flutter/@REV@/dart-sdk-linux-arm64.zip
+flutter_infra_release/flutter/@REV@/dart-sdk-linux-x64.zip
+
+# --- Material fonts and the Gradle wrapper (both universal artifacts) ---
+flutter_infra_release/flutter/fonts/3012db47f3130e62f7cc0beabff968a33cbec8d8/fonts.zip
+flutter_infra_release/gradle-wrapper/fd5c1f2c013565a3bea56ada6df9d2b8e96d56aa/gradle-wrapper.tgz
+
+# --- Android host gen_snapshot artifacts (release builds only) ---
+# macOS hosts are darwin-x64 even on Apple silicon, matching Flutter's cache.
+flutter_infra_release/flutter/@REV@/android-arm-release/darwin-x64.zip
+flutter_infra_release/flutter/@REV@/android-arm-release/linux-x64.zip
+flutter_infra_release/flutter/@REV@/android-arm64-release/darwin-x64.zip
+flutter_infra_release/flutter/@REV@/android-arm64-release/linux-x64.zip
+flutter_infra_release/flutter/@REV@/android-x64-release/darwin-x64.zip
+flutter_infra_release/flutter/@REV@/android-x64-release/linux-x64.zip
+
+# --- Android engine artifacts (release) ---
+flutter_infra_release/flutter/@REV@/android-arm-release/artifacts.zip
+flutter_infra_release/flutter/@REV@/android-arm64-release/artifacts.zip
+flutter_infra_release/flutter/@REV@/android-x64-release/artifacts.zip
+
+# --- iOS engine artifacts (Flutter updates all three for the iOS feature) ---
+flutter_infra_release/flutter/@REV@/ios/artifacts.zip
+flutter_infra_release/flutter/@REV@/ios-profile/artifacts.zip
+flutter_infra_release/flutter/@REV@/ios-release/artifacts.zip
+
+# --- Engine Maven jars that Gradle resolves from download.flutter.io ---
+download.flutter.io/io/flutter/flutter_embedding_release/1.0.0-@REV@/flutter_embedding_release-1.0.0-@REV@.jar
+download.flutter.io/io/flutter/flutter_embedding_release/1.0.0-@REV@/flutter_embedding_release-1.0.0-@REV@.pom
+download.flutter.io/io/flutter/arm64_v8a_release/1.0.0-@REV@/arm64_v8a_release-1.0.0-@REV@.jar
+download.flutter.io/io/flutter/arm64_v8a_release/1.0.0-@REV@/arm64_v8a_release-1.0.0-@REV@.pom
+download.flutter.io/io/flutter/armeabi_v7a_release/1.0.0-@REV@/armeabi_v7a_release-1.0.0-@REV@.jar
+download.flutter.io/io/flutter/armeabi_v7a_release/1.0.0-@REV@/armeabi_v7a_release-1.0.0-@REV@.pom
+download.flutter.io/io/flutter/x86_64_release/1.0.0-@REV@/x86_64_release-1.0.0-@REV@.jar
+download.flutter.io/io/flutter/x86_64_release/1.0.0-@REV@/x86_64_release-1.0.0-@REV@.pom
+
+# --- Shorebird patch tools ---
+shorebird/@REV@/patch-darwin-arm64.zip
+shorebird/@REV@/patch-darwin-x64.zip
+shorebird/@REV@/patch-linux-x64.zip
+shorebird/@REV@/patch-windows-x64.zip
